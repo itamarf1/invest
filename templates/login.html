@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Dashboard - Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+        .mfa-section {
+            display: none;
+            margin-top: 20px;
+        }
+        #qr-code {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container">
+        <div class="login-container bg-white">
+            <h2 class="text-center mb-4">Investment Dashboard</h2>
+            
+            <!-- Login Section -->
+            <div id="login-section">
+                <h4 class="text-center mb-3">Sign In</h4>
+                <div id="google-signin-button" class="d-flex justify-content-center mb-3"></div>
+                <p class="text-muted text-center small">
+                    Sign in with your Google account to access the investment dashboard
+                </p>
+            </div>
+            
+            <!-- MFA Section -->
+            <div id="mfa-section" class="mfa-section">
+                <h4 class="text-center mb-3">Two-Factor Authentication</h4>
+                <p class="text-muted text-center">Enter the 6-digit code from your authenticator app:</p>
+                <div class="mb-3">
+                    <input type="text" class="form-control text-center" id="mfa-token" 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}">
+                </div>
+                <button class="btn btn-primary w-100" onclick="verifyMFA()">Verify</button>
+            </div>
+            
+            <!-- MFA Setup Section -->
+            <div id="mfa-setup" style="display: none;">
+                <h4 class="text-center mb-3">Setup Two-Factor Authentication</h4>
+                <p class="text-muted text-center">Scan this QR code with your authenticator app:</p>
+                <div id="qr-code"></div>
+                <div class="mb-3">
+                    <label class="form-label">Or enter this secret manually:</label>
+                    <input type="text" class="form-control" id="mfa-secret" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Enter verification code:</label>
+                    <input type="text" class="form-control" id="mfa-setup-token" 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}">
+                </div>
+                <button class="btn btn-success w-100" onclick="completeMFASetup()">Enable MFA</button>
+                <button class="btn btn-secondary w-100 mt-2" onclick="skipMFA()">Skip for Now</button>
+            </div>
+            
+            <!-- User Info Section -->
+            <div id="user-info" style="display: none;">
+                <h4 class="text-center mb-3">Welcome!</h4>
+                <div class="text-center">
+                    <img id="user-picture" class="rounded-circle mb-2" width="64" height="64">
+                    <p><strong id="user-name"></strong></p>
+                    <p class="text-muted" id="user-email"></p>
+                    <p class="text-muted">Role: <span id="user-role" class="badge bg-primary"></span></p>
+                    <p class="text-muted">MFA: <span id="mfa-status" class="badge"></span></p>
+                </div>
+                <button class="btn btn-success w-100 mb-2" onclick="goToDashboard()">Go to Dashboard</button>
+                <button class="btn btn-outline-warning w-100 mb-2" onclick="setupMFA()" id="setup-mfa-btn">Setup MFA</button>
+                <button class="btn btn-outline-secondary w-100 mb-2" onclick="showSessions()">Manage Sessions</button>
+                <button class="btn btn-danger w-100" onclick="logout()">Logout</button>
+            </div>
+            
+            <!-- Sessions Section -->
+            <div id="sessions-section" style="display: none;">
+                <h4 class="text-center mb-3">Active Sessions</h4>
+                <div id="sessions-list"></div>
+                <button class="btn btn-outline-primary w-100 mt-2" onclick="showUserInfo()">Back to Profile</button>
+            </div>
+            
+            <!-- Loading -->
+            <div id="loading" style="display: none;" class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            
+            <!-- Alerts -->
+            <div id="alerts"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentSession = null;
+        
+        // Initialize Google Sign-In
+        window.onload = function () {
+            google.accounts.id.initialize({
+                client_id: "your-google-client-id.apps.googleusercontent.com",
+                callback: handleCredentialResponse
+            });
+            
+            google.accounts.id.renderButton(
+                document.getElementById("google-signin-button"),
+                { theme: "outline", size: "large", width: "100%" }
+            );
+            
+            checkAuthStatus();
+        };
+        
+        function handleCredentialResponse(response) {
+            showLoading(true);
+            
+            fetch('/api/auth/login/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_token: response.credential })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                if (data.success) {
+                    localStorage.setItem('session_token', data.session_token);
+                    currentUser = data.user;
+                    
+                    if (data.requires_mfa) {
+                        showSection('mfa-section');
+                    } else {
+                        showUserInfo();
+                    }
+                    
+                    showAlert('success', 'Login successful!');
+                } else {
+                    showAlert('danger', data.detail || 'Login failed');
+                }
+            })
+            .catch(error => {
+                showLoading(false);
+                showAlert('danger', 'Login error: ' + error.message);
+            });
+        }
+        
+        function verifyMFA() {
+            const token = document.getElementById('mfa-token').value;
+            if (token.length !== 6) {
+                showAlert('warning', 'Please enter a 6-digit code');
+                return;
+            }
+            
+            showLoading(true);
+            
+            fetch('/api/auth/verify-mfa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                },
+                body: JSON.stringify({ token: token })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                if (data.success) {
+                    showAlert('success', 'MFA verified successfully!');
+                    showUserInfo();
+                } else {
+                    showAlert('danger', data.detail || 'MFA verification failed');
+                }
+            })
+            .catch(error => {
+                showLoading(false);
+                showAlert('danger', 'MFA error: ' + error.message);
+            });
+        }
+        
+        function setupMFA() {
+            showLoading(true);
+            
+            fetch('/api/auth/setup-mfa', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                if (data.success) {
+                    document.getElementById('qr-code').innerHTML = 
+                        `<img src="${data.qr_code_image}" alt="MFA QR Code" class="img-fluid">`;
+                    document.getElementById('mfa-secret').value = data.secret;
+                    showSection('mfa-setup');
+                } else {
+                    showAlert('danger', data.detail || 'MFA setup failed');
+                }
+            })
+            .catch(error => {
+                showLoading(false);
+                showAlert('danger', 'MFA setup error: ' + error.message);
+            });
+        }
+        
+        function completeMFASetup() {
+            const token = document.getElementById('mfa-setup-token').value;
+            if (token.length !== 6) {
+                showAlert('warning', 'Please enter a 6-digit code');
+                return;
+            }
+            
+            showLoading(true);
+            
+            fetch('/api/auth/setup-mfa/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                },
+                body: JSON.stringify({ token: token })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                if (data.success) {
+                    showAlert('success', 'MFA enabled successfully!');
+                    currentUser.mfa_enabled = true;
+                    showUserInfo();
+                } else {
+                    showAlert('danger', data.detail || 'MFA setup verification failed');
+                }
+            })
+            .catch(error => {
+                showLoading(false);
+                showAlert('danger', 'MFA setup error: ' + error.message);
+            });
+        }
+        
+        function skipMFA() {
+            showUserInfo();
+        }
+        
+        function showSessions() {
+            showLoading(true);
+            
+            fetch('/api/auth/sessions', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                const sessionsList = document.getElementById('sessions-list');
+                sessionsList.innerHTML = '';
+                
+                data.sessions.forEach(session => {
+                    const sessionDiv = document.createElement('div');
+                    sessionDiv.className = 'card mb-2';
+                    sessionDiv.innerHTML = `
+                        <div class="card-body">
+                            <h6 class="card-title">
+                                ${session.is_current ? 'Current Session' : 'Session'} 
+                                ${session.is_current ? '<span class="badge bg-success">Current</span>' : ''}
+                            </h6>
+                            <p class="card-text small text-muted">
+                                Created: ${new Date(session.created_at).toLocaleString()}<br>
+                                Last Activity: ${new Date(session.last_activity).toLocaleString()}<br>
+                                IP: ${session.ip_address}<br>
+                                Agent: ${session.user_agent}
+                            </p>
+                            ${!session.is_current ? `<button class="btn btn-sm btn-outline-danger" onclick="revokeSession('${session.session_id}')">Revoke</button>` : ''}
+                        </div>
+                    `;
+                    sessionsList.appendChild(sessionDiv);
+                });
+                
+                showSection('sessions-section');
+            })
+            .catch(error => {
+                showLoading(false);
+                showAlert('danger', 'Error loading sessions: ' + error.message);
+            });
+        }
+        
+        function revokeSession(sessionId) {
+            if (!confirm('Are you sure you want to revoke this session?')) return;
+            
+            fetch(`/api/auth/sessions/${sessionId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('success', 'Session revoked');
+                    showSessions(); // Refresh the list
+                } else {
+                    showAlert('danger', data.detail || 'Failed to revoke session');
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'Error revoking session: ' + error.message);
+            });
+        }
+        
+        function logout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('session_token')}`
+                }
+            })
+            .then(() => {
+                localStorage.removeItem('session_token');
+                currentUser = null;
+                currentSession = null;
+                showSection('login-section');
+                showAlert('success', 'Logged out successfully');
+            })
+            .catch(error => {
+                // Even if the request fails, clear local storage
+                localStorage.removeItem('session_token');
+                currentUser = null;
+                currentSession = null;
+                showSection('login-section');
+                showAlert('warning', 'Logged out (with errors)');
+            });
+        }
+        
+        function goToDashboard() {
+            window.location.href = '/';
+        }
+        
+        function checkAuthStatus() {
+            const token = localStorage.getItem('session_token');
+            if (!token) return;
+            
+            fetch('/api/auth/status', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.authenticated) {
+                    currentUser = data.user;
+                    currentSession = data.session;
+                    showUserInfo();
+                }
+            })
+            .catch(error => {
+                console.log('Not authenticated');
+            });
+        }
+        
+        function showUserInfo() {
+            if (!currentUser) return;
+            
+            document.getElementById('user-name').textContent = currentUser.name;
+            document.getElementById('user-email').textContent = currentUser.email;
+            document.getElementById('user-role').textContent = currentUser.role;
+            
+            if (currentUser.picture) {
+                document.getElementById('user-picture').src = currentUser.picture;
+                document.getElementById('user-picture').style.display = 'block';
+            }
+            
+            const mfaStatus = document.getElementById('mfa-status');
+            if (currentUser.mfa_enabled) {
+                mfaStatus.textContent = 'Enabled';
+                mfaStatus.className = 'badge bg-success';
+                document.getElementById('setup-mfa-btn').style.display = 'none';
+            } else {
+                mfaStatus.textContent = 'Disabled';
+                mfaStatus.className = 'badge bg-warning';
+                document.getElementById('setup-mfa-btn').style.display = 'block';
+            }
+            
+            showSection('user-info');
+        }
+        
+        function showSection(sectionId) {
+            const sections = ['login-section', 'mfa-section', 'mfa-setup', 'user-info', 'sessions-section'];
+            sections.forEach(id => {
+                document.getElementById(id).style.display = id === sectionId ? 'block' : 'none';
+            });
+        }
+        
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+        
+        function showAlert(type, message) {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type} alert-dismissible fade show mt-3`;
+            alert.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertsDiv.appendChild(alert);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        // Auto-submit MFA token when 6 digits are entered
+        document.getElementById('mfa-token').addEventListener('input', function(e) {
+            if (e.target.value.length === 6) {
+                verifyMFA();
+            }
+        });
+        
+        document.getElementById('mfa-setup-token').addEventListener('input', function(e) {
+            if (e.target.value.length === 6) {
+                completeMFASetup();
+            }
+        });
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

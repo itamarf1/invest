@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Investment Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">📈 InvestmentSystem</a>
+            <div class="nav-links">
+                <a href="/" class="{% block nav_dashboard %}{% endblock %}">Dashboard</a>
+                <a href="/algorithms" class="{% block nav_algorithms %}{% endblock %}">Algorithm Performance</a>
+                <a href="/portfolio" class="{% block nav_portfolio %}{% endblock %}">Portfolio</a>
+                <a href="/backtest" class="{% block nav_backtest %}{% endblock %}">Backtest</a>
+                <a href="/news" class="{% block nav_news %}{% endblock %}">News & Sentiment</a>
+                <a href="/trading" class="{% block nav_trading %}{% endblock %}">Trading</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading"></div>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

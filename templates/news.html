@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}News & Sentiment - Investment System{% endblock %}
+{% block nav_news %}active{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">News & Sentiment Analysis</h1>
+    </div>
+    
+    <div class="grid grid-2">
+        <form id="newsForm" class="form-row">
+            <div class="form-group">
+                <label for="symbol" class="form-label">Stock Symbol</label>
+                <input type="text" id="symbol" class="form-input" placeholder="AAPL" value="AAPL">
+            </div>
+            
+            <div class="form-group">
+                <label for="period" class="form-label">Analysis Period</label>
+                <select id="period" class="form-input">
+                    <option value="3d">3 Days</option>
+                    <option value="7d" selected>7 Days</option>
+                    <option value="1mo">1 Month</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">Analyze Sentiment</button>
+            </div>
+        </form>
+        
+        <form id="marketNewsForm">
+            <div class="form-group">
+                <button type="submit" class="btn btn-secondary">Get Market News</button>
+                <small class="form-help">Latest financial news and sentiment</small>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="sentimentResults" style="display: none;">
+    <!-- Sentiment Summary Cards -->
+    <div class="grid grid-3">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Sentiment Score</h2>
+            </div>
+            <div class="stat">
+                <div id="sentimentScore" class="stat-value">0.00</div>
+                <div class="stat-label">Overall Sentiment</div>
+                <div id="sentimentLabel" class="signal signal-neutral">Neutral</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Market Impact</h2>
+            </div>
+            <div class="stat">
+                <div id="impactScore" class="stat-value">0.0</div>
+                <div class="stat-label">Impact Score</div>
+                <div id="priceImpact" class="stat-change">0.00%</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">News Coverage</h2>
+            </div>
+            <div class="stat">
+                <div id="articleCount" class="stat-value">0</div>
+                <div class="stat-label">Articles Analyzed</div>
+                <div id="sentimentConfidence" class="stat-value">0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Enhanced vs Base Signal Comparison -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Sentiment-Enhanced Trading Signal</h2>
+        </div>
+        
+        <div class="grid grid-2">
+            <div class="stat">
+                <div class="stat-label">Base Technical Signal</div>
+                <div id="baseSignal" class="signal signal-hold">HOLD</div>
+                <div id="baseConfidence" class="stat-value">50%</div>
+            </div>
+            
+            <div class="stat">
+                <div class="stat-label">Enhanced Signal (with sentiment)</div>
+                <div id="enhancedSignal" class="signal signal-hold">HOLD</div>
+                <div id="enhancedConfidence" class="stat-value">50%</div>
+            </div>
+        </div>
+        
+        <div class="stock-info">
+            <div class="stat">
+                <div id="sentimentInfluence" class="stat-value">0.00</div>
+                <div class="stat-label">Sentiment Influence</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- News Articles -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Recent News Articles</h2>
+        </div>
+        <div id="newsArticles">
+        </div>
+    </div>
+    
+    <!-- Significant Events -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Significant News Events</h2>
+        </div>
+        <div id="newsEvents">
+        </div>
+    </div>
+</div>
+
+<div id="marketNewsResults" style="display: none;">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">General Market News & Sentiment</h2>
+            <div id="marketSentiment" class="signal signal-neutral">Neutral</div>
+        </div>
+        
+        <div class="grid grid-3 market-stats">
+            <div class="stat">
+                <div id="marketPositive" class="stat-value" style="color: var(--success-color);">0</div>
+                <div class="stat-label">Positive Articles</div>
+            </div>
+            <div class="stat">
+                <div id="marketNegative" class="stat-value" style="color: var(--danger-color);">0</div>
+                <div class="stat-label">Negative Articles</div>
+            </div>
+            <div class="stat">
+                <div id="marketNeutral" class="stat-value" style="color: #6b7280;">0</div>
+                <div class="stat-label">Neutral Articles</div>
+            </div>
+        </div>
+        
+        <div id="marketArticles" class="market-news-list">
+        </div>
+    </div>
+</div>
+
+<div id="errorAlert" class="alert alert-error" style="display: none;">
+    <div id="errorMessage"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('newsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('symbol').value.toUpperCase();
+    const period = document.getElementById('period').value;
+    
+    if (!symbol) {
+        showError('Please enter a stock symbol');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        // Fetch sentiment analysis and news events in parallel
+        const [sentimentResponse, eventsResponse] = await Promise.all([
+            axios.post('/api/sentiment-analysis', { symbol, period }),
+            axios.post('/api/news-events', { symbol, period })
+        ]);
+        
+        displaySentimentResults(sentimentResponse.data);
+        displayNewsEvents(eventsResponse.data.events);
+        
+        document.getElementById('sentimentResults').style.display = 'block';
+        document.getElementById('marketNewsResults').style.display = 'none';
+        hideError();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showError(error.response?.data?.detail || 'Failed to fetch sentiment analysis');
+        document.getElementById('sentimentResults').style.display = 'none';
+    } finally {
+        hideLoading();
+    }
+});
+
+document.getElementById('marketNewsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    showLoading();
+    
+    try {
+        const response = await axios.get('/api/market-news');
+        
+        displayMarketNews(response.data);
+        
+        document.getElementById('marketNewsResults').style.display = 'block';
+        document.getElementById('sentimentResults').style.display = 'none';
+        hideError();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showError('Failed to fetch market news');
+        document.getElementById('marketNewsResults').style.display = 'none';
+    } finally {
+        hideLoading();
+    }
+});
+
+function displaySentimentResults(data) {
+    // Update sentiment score
+    const sentimentScore = data.sentiment_score || 0;
+    document.getElementById('sentimentScore').textContent = sentimentScore.toFixed(3);
+    
+    const sentimentLabel = data.sentiment_label || 'neutral';
+    const labelElement = document.getElementById('sentimentLabel');
+    labelElement.textContent = sentimentLabel.toUpperCase();
+    labelElement.className = `signal signal-${sentimentLabel}`;
+    
+    // Update impact metrics
+    document.getElementById('impactScore').textContent = (data.impact_score || 0).toFixed(3);
+    
+    const priceImpactElement = document.getElementById('priceImpact');
+    const priceImpact = data.estimated_price_impact || 0;
+    priceImpactElement.textContent = `${priceImpact >= 0 ? '+' : ''}${priceImpact.toFixed(2)}%`;
+    priceImpactElement.className = `stat-change ${priceImpact >= 0 ? 'positive' : 'negative'}`;
+    
+    // Update article count and confidence
+    document.getElementById('articleCount').textContent = data.article_count || 0;
+    document.getElementById('sentimentConfidence').textContent = `${((data.sentiment_confidence || 0) * 100).toFixed(0)}%`;
+    
+    // Update signal comparison
+    const baseSignalElement = document.getElementById('baseSignal');
+    baseSignalElement.textContent = data.base_action || 'HOLD';
+    baseSignalElement.className = `signal signal-${(data.base_action || 'hold').toLowerCase()}`;
+    document.getElementById('baseConfidence').textContent = `${((data.base_confidence || 0) * 100).toFixed(0)}%`;
+    
+    const enhancedSignalElement = document.getElementById('enhancedSignal');
+    enhancedSignalElement.textContent = data.enhanced_action || 'HOLD';
+    enhancedSignalElement.className = `signal signal-${(data.enhanced_action || 'hold').toLowerCase()}`;
+    document.getElementById('enhancedConfidence').textContent = `${((data.enhanced_confidence || 0) * 100).toFixed(0)}%`;
+    
+    document.getElementById('sentimentInfluence').textContent = (data.sentiment_influence || 0).toFixed(3);
+    
+    // Display news articles
+    displayNewsArticles(data.news_articles || []);
+}
+
+function displayNewsArticles(articles) {
+    const container = document.getElementById('newsArticles');
+    
+    if (articles.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No recent news articles found.</p>';
+        return;
+    }
+    
+    let html = '';
+    articles.forEach((article, index) => {
+        const sentimentClass = `signal-${article.sentiment_label || 'neutral'}`;
+        html += `
+            <div class="news-article" style="border-left: 4px solid var(--gray-300); padding-left: 16px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 8px; font-size: 16px;">
+                    <a href="${article.url || '#'}" target="_blank" style="color: var(--primary-color); text-decoration: none;">
+                        ${article.title || 'Untitled'}
+                    </a>
+                </h3>
+                <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 8px; font-size: 14px; color: var(--gray-600);">
+                    <span>📰 ${article.source || 'Unknown'}</span>
+                    <span class="signal signal-${article.sentiment_label || 'neutral'}">${(article.sentiment_score || 0).toFixed(3)}</span>
+                    <span>${article.published_date ? new Date(article.published_date).toLocaleDateString() : 'Recent'}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function displayNewsEvents(events) {
+    const container = document.getElementById('newsEvents');
+    
+    if (events.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No significant news events detected.</p>';
+        return;
+    }
+    
+    let html = '';
+    events.forEach((event, index) => {
+        const eventTypes = event.event_types ? event.event_types.join(', ') : 'General';
+        html += `
+            <div class="event-item" style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: between; align-items: flex-start; gap: 16px;">
+                    <div style="flex: 1;">
+                        <h4 style="margin-bottom: 8px; color: var(--gray-900);">${event.title}</h4>
+                        <div style="display: flex; gap: 16px; align-items: center; font-size: 14px; color: var(--gray-600);">
+                            <span>📅 ${new Date(event.published_date).toLocaleDateString()}</span>
+                            <span>🏷️ ${eventTypes}</span>
+                            <span>📰 ${event.source}</span>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="signal signal-${event.sentiment_label}">${(event.sentiment_score || 0).toFixed(3)}</div>
+                        <div style="font-size: 12px; color: var(--gray-500);">Relevance: ${(event.relevance_score * 100).toFixed(0)}%</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function displayMarketNews(data) {
+    // Update market sentiment
+    const sentimentElement = document.getElementById('marketSentiment');
+    sentimentElement.textContent = (data.sentiment_label || 'neutral').toUpperCase();
+    sentimentElement.className = `signal signal-${data.sentiment_label || 'neutral'}`;
+    
+    // Update distribution
+    document.getElementById('marketPositive').textContent = data.sentiment_distribution.positive || 0;
+    document.getElementById('marketNegative').textContent = data.sentiment_distribution.negative || 0;
+    document.getElementById('marketNeutral').textContent = data.sentiment_distribution.neutral || 0;
+    
+    // Display articles
+    const container = document.getElementById('marketArticles');
+    const articles = data.articles || [];
+    
+    if (articles.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No market news available.</p>';
+        return;
+    }
+    
+    let html = '<div class="market-news-grid" style="display: grid; gap: 16px;">';
+    
+    articles.slice(0, 10).forEach(article => {
+        const publishedDate = article.published_date ? new Date(article.published_date).toLocaleDateString() : 'Recent';
+        html += `
+            <div class="market-article" style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 16px;">
+                <h4 style="margin-bottom: 8px;">
+                    <a href="${article.url || '#'}" target="_blank" style="color: var(--primary-color); text-decoration: none;">
+                        ${article.title || 'Untitled'}
+                    </a>
+                </h4>
+                <p style="margin-bottom: 12px; color: var(--gray-600); font-size: 14px; line-height: 1.4;">
+                    ${(article.summary || '').substring(0, 150)}${article.summary && article.summary.length > 150 ? '...' : ''}
+                </p>
+                <div style="display: flex; justify-content: between; align-items: center; font-size: 12px; color: var(--gray-500);">
+                    <span>📰 ${article.source}</span>
+                    <span>📅 ${publishedDate}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('errorAlert').style.display = 'block';
+}
+
+function hideError() {
+    document.getElementById('errorAlert').style.display = 'none';
+}
+
+function showLoading() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// Load AAPL sentiment analysis by default
+window.addEventListener('load', () => {
+    document.getElementById('newsForm').dispatchEvent(new Event('submit'));
+});
+</script>
+{% endblock %}

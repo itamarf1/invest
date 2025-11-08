@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}Backtest Strategy - Investment System{% endblock %}
+{% block nav_backtest %}active{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Strategy Backtesting</h1>
+    </div>
+    
+    <form id="backtestForm">
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="symbol" class="form-label">Stock Symbol</label>
+                <input type="text" id="symbol" class="form-input" placeholder="AAPL" value="AAPL">
+            </div>
+            
+            <div class="form-group">
+                <label for="period" class="form-label">Backtest Period</label>
+                <select id="period" class="form-input">
+                    <option value="6mo">6 Months</option>
+                    <option value="1y" selected>1 Year</option>
+                    <option value="2y">2 Years</option>
+                    <option value="5y">5 Years</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="capital" class="form-label">Initial Capital ($)</label>
+                <input type="number" id="capital" class="form-input" value="10000" min="1000" step="1000">
+            </div>
+            
+            <div class="form-group">
+                <label for="shortWindow" class="form-label">Short MA Window</label>
+                <input type="number" id="shortWindow" class="form-input" value="20" min="5" max="50">
+            </div>
+            
+            <div class="form-group">
+                <label for="longWindow" class="form-label">Long MA Window</label>
+                <input type="number" id="longWindow" class="form-input" value="50" min="20" max="200">
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">Run Backtest</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div id="backtestResults" style="display: none;">
+    <!-- Performance Summary -->
+    <div class="grid grid-3">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Strategy Return</h2>
+            </div>
+            <div class="stat">
+                <div id="strategyReturn" class="stat-value">0.00%</div>
+                <div class="stat-label">Total Return</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Buy & Hold Return</h2>
+            </div>
+            <div class="stat">
+                <div id="buyHoldReturn" class="stat-value">0.00%</div>
+                <div class="stat-label">Total Return</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Outperformance</h2>
+            </div>
+            <div class="stat">
+                <div id="outperformance" class="stat-value">0.00%</div>
+                <div class="stat-label">vs Buy & Hold</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Detailed Results -->
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Backtest Summary</h2>
+                <div id="stockSymbol" class="signal signal-hold"></div>
+            </div>
+            
+            <div class="stock-info">
+                <div class="stat">
+                    <div id="initialCapital" class="stat-value">$0</div>
+                    <div class="stat-label">Initial Capital</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="finalValue" class="stat-value">$0</div>
+                    <div class="stat-label">Final Value</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="totalTrades" class="stat-value">0</div>
+                    <div class="stat-label">Total Trades</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="testPeriod" class="stat-value">-</div>
+                    <div class="stat-label">Period</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Strategy Parameters</h2>
+            </div>
+            
+            <div class="stock-info">
+                <div class="stat">
+                    <div id="shortMA" class="stat-value">20</div>
+                    <div class="stat-label">Short MA Days</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="longMA" class="stat-value">50</div>
+                    <div class="stat-label">Long MA Days</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="strategyType" class="stat-value">MA Cross</div>
+                    <div class="stat-label">Strategy</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Portfolio Performance Chart -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Portfolio Performance vs Stock Price</h2>
+        </div>
+        <div class="chart-container">
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- Recent Trades -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Recent Trading Activity</h2>
+        </div>
+        
+        <table class="portfolio-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Action</th>
+                    <th>Shares</th>
+                    <th>Price</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody id="tradesTableBody">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="errorAlert" class="alert alert-error" style="display: none;">
+    <div id="errorMessage"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let performanceChart = null;
+
+document.getElementById('backtestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('symbol').value.toUpperCase();
+    const period = document.getElementById('period').value;
+    const capital = parseFloat(document.getElementById('capital').value);
+    const shortWindow = parseInt(document.getElementById('shortWindow').value);
+    const longWindow = parseInt(document.getElementById('longWindow').value);
+    
+    if (!symbol) {
+        showError('Please enter a stock symbol');
+        return;
+    }
+    
+    if (shortWindow >= longWindow) {
+        showError('Short window must be less than long window');
+        return;
+    }
+    
+    if (capital < 1000) {
+        showError('Initial capital must be at least $1,000');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        const response = await axios.post('/api/backtest', {
+            symbol: symbol,
+            period: period,
+            capital: capital,
+            short_window: shortWindow,
+            long_window: longWindow
+        });
+        
+        displayBacktestResults(response.data);
+        document.getElementById('backtestResults').style.display = 'block';
+        hideError();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showError(error.response?.data?.detail || 'Failed to run backtest');
+        document.getElementById('backtestResults').style.display = 'none';
+    } finally {
+        hideLoading();
+    }
+});
+
+function displayBacktestResults(data) {
+    // Update summary cards
+    const strategyReturnElement = document.getElementById('strategyReturn');
+    strategyReturnElement.textContent = `${data.total_return_pct.toFixed(2)}%`;
+    strategyReturnElement.className = `stat-value ${data.total_return_pct >= 0 ? 'positive' : 'negative'}`;
+    
+    const buyHoldReturnElement = document.getElementById('buyHoldReturn');
+    buyHoldReturnElement.textContent = `${data.buy_hold_return_pct.toFixed(2)}%`;
+    buyHoldReturnElement.className = `stat-value ${data.buy_hold_return_pct >= 0 ? 'positive' : 'negative'}`;
+    
+    const outperformanceElement = document.getElementById('outperformance');
+    outperformanceElement.textContent = `${data.outperformance.toFixed(2)}%`;
+    outperformanceElement.className = `stat-value ${data.outperformance >= 0 ? 'positive' : 'negative'}`;
+    
+    // Update detailed results
+    document.getElementById('stockSymbol').textContent = data.symbol;
+    document.getElementById('initialCapital').textContent = `$${data.initial_capital.toLocaleString()}`;
+    document.getElementById('finalValue').textContent = `$${data.final_value.toLocaleString()}`;
+    document.getElementById('totalTrades').textContent = data.num_trades;
+    document.getElementById('testPeriod').textContent = data.period;
+    
+    // Update strategy parameters
+    document.getElementById('shortMA').textContent = document.getElementById('shortWindow').value;
+    document.getElementById('longMA').textContent = document.getElementById('longWindow').value;
+    
+    // Display performance chart
+    displayPerformanceChart(data.portfolio_chart, data.symbol);
+    
+    // Display recent trades
+    displayTrades(data.recent_trades);
+}
+
+function displayPerformanceChart(chartData, symbol) {
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    
+    if (performanceChart) {
+        performanceChart.destroy();
+    }
+    
+    const labels = chartData.map(d => d.date);
+    const portfolioValues = chartData.map(d => d.portfolio_value);
+    const stockPrices = chartData.map(d => d.stock_price);
+    
+    // Normalize stock prices to initial portfolio value for comparison
+    const initialPortfolioValue = portfolioValues[0];
+    const initialStockPrice = stockPrices[0];
+    const normalizedStockPrices = stockPrices.map(price => 
+        (price / initialStockPrice) * initialPortfolioValue
+    );
+    
+    performanceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Strategy Portfolio',
+                    data: portfolioValues,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                },
+                {
+                    label: `${symbol} Buy & Hold`,
+                    data: normalizedStockPrices,
+                    borderColor: '#dc2626',
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.1,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'Portfolio Value ($)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function displayTrades(trades) {
+    const tableBody = document.getElementById('tradesTableBody');
+    tableBody.innerHTML = '';
+    
+    if (trades.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="5" style="text-align: center; color: #6b7280;">No trades executed</td>';
+        tableBody.appendChild(row);
+        return;
+    }
+    
+    trades.forEach(trade => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${trade.date}</td>
+            <td>
+                <span class="signal signal-${trade.action.toLowerCase()}">
+                    ${trade.action}
+                </span>
+            </td>
+            <td>${trade.shares}</td>
+            <td>$${trade.price.toFixed(2)}</td>
+            <td>$${trade.value.toLocaleString()}</td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('errorAlert').style.display = 'block';
+}
+
+function hideError() {
+    document.getElementById('errorAlert').style.display = 'none';
+}
+
+function showLoading() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// Auto-load default backtest on page load
+window.addEventListener('load', () => {
+    document.getElementById('backtestForm').dispatchEvent(new Event('submit'));
+});
+</script>
+{% endblock %}

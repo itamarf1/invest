@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio Analysis - Investment System{% endblock %}
+{% block nav_portfolio %}active{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Portfolio Analysis</h1>
+    </div>
+    
+    <form id="portfolioForm">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="symbols" class="form-label">Stock Symbols (comma-separated)</label>
+                <input type="text" id="symbols" class="form-input" 
+                       placeholder="AAPL, MSFT, GOOGL, TSLA, SPY" 
+                       value="AAPL, MSFT, GOOGL, TSLA, SPY, QQQ">
+            </div>
+            
+            <div class="form-group">
+                <label for="period" class="form-label">Analysis Period</label>
+                <select id="period" class="form-input">
+                    <option value="1mo">1 Month</option>
+                    <option value="3mo">3 Months</option>
+                    <option value="6mo" selected>6 Months</option>
+                    <option value="1y">1 Year</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">Analyze Portfolio</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div id="portfolioResults" style="display: none;">
+    <!-- Summary Cards -->
+    <div class="grid grid-3">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Buy Signals</h2>
+            </div>
+            <div class="stat">
+                <div id="buyCount" class="stat-value" style="color: var(--success-color);">0</div>
+                <div class="stat-label">Stocks to Buy</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Sell Signals</h2>
+            </div>
+            <div class="stat">
+                <div id="sellCount" class="stat-value" style="color: var(--danger-color);">0</div>
+                <div class="stat-label">Stocks to Sell</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Hold Positions</h2>
+            </div>
+            <div class="stat">
+                <div id="holdCount" class="stat-value" style="color: #6b7280;">0</div>
+                <div class="stat-label">Stocks to Hold</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Portfolio Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Portfolio Breakdown</h2>
+            <div id="totalStocks" class="stat-value">0 stocks analyzed</div>
+        </div>
+        
+        <table class="portfolio-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Current Price</th>
+                    <th>Signal</th>
+                    <th>Confidence</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="portfolioTableBody">
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Detailed Recommendations -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Trading Recommendations</h2>
+        </div>
+        <div id="recommendations">
+        </div>
+    </div>
+</div>
+
+<div id="errorAlert" class="alert alert-error" style="display: none;">
+    <div id="errorMessage"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('portfolioForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const symbolsInput = document.getElementById('symbols').value;
+    const period = document.getElementById('period').value;
+    
+    if (!symbolsInput.trim()) {
+        showError('Please enter at least one stock symbol');
+        return;
+    }
+    
+    // Parse symbols and clean them
+    const symbols = symbolsInput.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+    
+    if (symbols.length === 0) {
+        showError('Please enter valid stock symbols');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        const response = await axios.post('/api/portfolio-analysis', {
+            symbols: symbols,
+            period: period
+        });
+        
+        displayPortfolioResults(response.data);
+        document.getElementById('portfolioResults').style.display = 'block';
+        hideError();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showError(error.response?.data?.detail || 'Failed to analyze portfolio');
+        document.getElementById('portfolioResults').style.display = 'none';
+    } finally {
+        hideLoading();
+    }
+});
+
+function displayPortfolioResults(data) {
+    // Update summary cards
+    document.getElementById('buyCount').textContent = data.summary.BUY || 0;
+    document.getElementById('sellCount').textContent = data.summary.SELL || 0;
+    document.getElementById('holdCount').textContent = data.summary.HOLD || 0;
+    document.getElementById('totalStocks').textContent = `${data.total_stocks} stocks analyzed`;
+    
+    // Clear and populate table
+    const tableBody = document.getElementById('portfolioTableBody');
+    tableBody.innerHTML = '';
+    
+    let recommendations = {
+        buy: [],
+        sell: [],
+        hold: []
+    };
+    
+    data.portfolio.forEach(stock => {
+        const row = document.createElement('tr');
+        
+        // Status indicator
+        let statusIndicator = '';
+        let statusClass = '';
+        if (stock.status === 'success') {
+            statusIndicator = '✅';
+            statusClass = 'success';
+        } else if (stock.status === 'no_data') {
+            statusIndicator = '⚠️';
+            statusClass = 'warning';
+        } else if (stock.status === 'error') {
+            statusIndicator = '❌';
+            statusClass = 'error';
+        }
+        
+        row.innerHTML = `
+            <td><strong>${stock.symbol}</strong></td>
+            <td>${stock.price ? `$${stock.price.toFixed(2)}` : 'N/A'}</td>
+            <td>
+                <span class="signal signal-${stock.action.toLowerCase()}">
+                    ${stock.action}
+                </span>
+            </td>
+            <td>${(stock.confidence * 100).toFixed(0)}%</td>
+            <td>${statusIndicator} ${stock.status.replace('_', ' ')}</td>
+        `;
+        
+        tableBody.appendChild(row);
+        
+        // Group for recommendations
+        if (stock.status === 'success' && stock.confidence > 0.6) {
+            if (stock.action === 'BUY') {
+                recommendations.buy.push(stock);
+            } else if (stock.action === 'SELL') {
+                recommendations.sell.push(stock);
+            }
+        }
+    });
+    
+    // Display recommendations
+    displayRecommendations(recommendations);
+}
+
+function displayRecommendations(recs) {
+    const container = document.getElementById('recommendations');
+    let html = '';
+    
+    if (recs.buy.length > 0) {
+        html += '<h3 style="color: var(--success-color); margin-bottom: 15px;">🟢 Strong Buy Signals</h3>';
+        recs.buy.forEach(stock => {
+            html += `
+                <div class="alert alert-success">
+                    <strong>${stock.symbol}</strong> - Current Price: $${stock.price.toFixed(2)} 
+                    (Confidence: ${(stock.confidence * 100).toFixed(0)}%)
+                    <br><small>Moving average crossover indicates upward momentum</small>
+                </div>
+            `;
+        });
+    }
+    
+    if (recs.sell.length > 0) {
+        html += '<h3 style="color: var(--danger-color); margin-bottom: 15px;">🔴 Strong Sell Signals</h3>';
+        recs.sell.forEach(stock => {
+            html += `
+                <div class="alert alert-error">
+                    <strong>${stock.symbol}</strong> - Current Price: $${stock.price.toFixed(2)} 
+                    (Confidence: ${(stock.confidence * 100).toFixed(0)}%)
+                    <br><small>Moving average crossover indicates downward trend</small>
+                </div>
+            `;
+        });
+    }
+    
+    if (recs.buy.length === 0 && recs.sell.length === 0) {
+        html = `
+            <div class="alert alert-warning">
+                <strong>No high-confidence signals detected</strong>
+                <br><small>All stocks are showing HOLD signals or low confidence levels. Consider monitoring for trend changes.</small>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('errorAlert').style.display = 'block';
+}
+
+function hideError() {
+    document.getElementById('errorAlert').style.display = 'none';
+}
+
+function showLoading() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// Auto-load default portfolio on page load
+window.addEventListener('load', () => {
+    document.getElementById('portfolioForm').dispatchEvent(new Event('submit'));
+});
+</script>
+{% endblock %}

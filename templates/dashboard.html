@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Investment System{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Stock Analysis Dashboard</h1>
+    </div>
+    
+    <form id="stockForm" class="form-row">
+        <div class="form-group">
+            <label for="symbol" class="form-label">Stock Symbol</label>
+            <input type="text" id="symbol" class="form-input" placeholder="AAPL" value="AAPL">
+        </div>
+        
+        <div class="form-group">
+            <label for="period" class="form-label">Period</label>
+            <select id="period" class="form-input">
+                <option value="1mo">1 Month</option>
+                <option value="3mo">3 Months</option>
+                <option value="6mo" selected>6 Months</option>
+                <option value="1y">1 Year</option>
+                <option value="2y">2 Years</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">Analyze Stock</button>
+        </div>
+    </form>
+</div>
+
+<div id="stockResults" style="display: none;">
+    <div class="grid grid-2">
+        <!-- Stock Information Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Stock Information</h2>
+                <div id="stockSymbol" class="signal"></div>
+            </div>
+            
+            <div class="stock-info">
+                <div class="stat">
+                    <div id="currentPrice" class="stat-value">$0.00</div>
+                    <div class="stat-label">Current Price</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="dailyChange" class="stat-value">0.00%</div>
+                    <div class="stat-label">Daily Change</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="volume" class="stat-value">0</div>
+                    <div class="stat-label">Volume</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="sma20" class="stat-value">$0.00</div>
+                    <div class="stat-label">SMA 20</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="sma50" class="stat-value">$0.00</div>
+                    <div class="stat-label">SMA 50</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="rsi" class="stat-value">0.00</div>
+                    <div class="stat-label">RSI</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Trading Signal Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Trading Signal</h2>
+            </div>
+            
+            <div class="stock-info">
+                <div class="stat">
+                    <div id="signalAction" class="signal">HOLD</div>
+                    <div class="stat-label">Action</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="signalPrice" class="stat-value">$0.00</div>
+                    <div class="stat-label">Signal Price</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="confidence" class="stat-value">0%</div>
+                    <div class="stat-label">Confidence</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="signalTime" class="stat-value">-</div>
+                    <div class="stat-label">Signal Time</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Price Chart -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Price Chart with Moving Averages</h2>
+        </div>
+        
+        <!-- Time Period Tabs -->
+        <div class="chart-tabs">
+            <button class="tab-button" data-period="1d" data-interval="5m">Real-time (Today)</button>
+            <button class="tab-button" data-period="5d" data-interval="1h">1 Week</button>
+            <button class="tab-button active" data-period="1mo" data-interval="1h">1 Month</button>
+            <button class="tab-button" data-period="6mo" data-interval="1d">6 Months</button>
+            <button class="tab-button" data-period="1y" data-interval="1d">1 Year</button>
+            <button class="tab-button" data-period="5y" data-interval="1wk">5 Years</button>
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="priceChart"></canvas>
+        </div>
+        <div id="chartLoading" class="chart-loading" style="display: none;">Loading chart data...</div>
+    </div>
+</div>
+
+<div id="errorAlert" class="alert alert-error" style="display: none;">
+    <div id="errorMessage"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let priceChart = null;
+let currentSymbol = '';
+let currentChartData = null;
+
+document.getElementById('stockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('symbol').value.toUpperCase();
+    const period = document.getElementById('period').value;
+    
+    if (!symbol) {
+        showError('Please enter a stock symbol');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        // Fetch stock data and trading signal in parallel
+        const [stockResponse, signalResponse] = await Promise.all([
+            axios.post('/api/stock-data', { symbol, period }),
+            axios.post('/api/trading-signal', { symbol, period })
+        ]);
+        
+        currentSymbol = symbol;
+        
+        displayStockData(stockResponse.data);
+        displayTradingSignal(signalResponse.data);
+        displayChart(stockResponse.data.chart_data, symbol, stockResponse.data.data_quality);
+        
+        // Setup chart tabs after initial load
+        setupChartTabs();
+        
+        document.getElementById('stockResults').style.display = 'block';
+        hideError();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showError(error.response?.data?.detail || 'Failed to fetch stock data');
+        document.getElementById('stockResults').style.display = 'none';
+    } finally {
+        hideLoading();
+    }
+});
+
+function displayStockData(data) {
+    // Display symbol and company name if available
+    const symbolText = data.company_name ? `${data.symbol} - ${data.company_name}` : data.symbol;
+    document.getElementById('stockSymbol').textContent = symbolText;
+    document.getElementById('stockSymbol').className = 'signal signal-hold';
+    
+    // Current price with data quality indicator
+    const priceText = `$${data.current_price?.toFixed(2) || '0.00'}`;
+    const realTimeIndicator = data.data_quality?.is_real_time ? ' ⚡' : ' 📊';
+    const granularityIndicator = data.data_quality?.granularity === 'hourly' ? ' (1H)' : ' (1D)';
+    document.getElementById('currentPrice').textContent = priceText + realTimeIndicator + granularityIndicator;
+    document.getElementById('currentPrice').title = `${data.data_quality?.is_real_time ? 'Real-time' : 'Historical'} price with ${data.data_quality?.granularity} data (${data.data_quality?.data_points} points, refreshes every ${data.data_quality?.refresh_rate})`;
+    
+    // Daily change with better formatting
+    const changeElement = document.getElementById('dailyChange');
+    const changeValue = data.daily_change || 0;
+    changeElement.textContent = `${changeValue >= 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
+    changeElement.className = `stat-value ${changeValue >= 0 ? 'positive' : 'negative'}`;
+    
+    // Volume with low-volume warning
+    const volumeElement = document.getElementById('volume');
+    const hasVolume = data.data_quality?.has_recent_volume;
+    volumeElement.textContent = formatNumber(data.volume) + (hasVolume ? '' : ' ⚠️');
+    volumeElement.title = hasVolume ? 'Recent trading activity' : 'Low/No recent volume - may be illiquid';
+    
+    // Technical indicators
+    document.getElementById('sma20').textContent = data.sma_20 ? `$${data.sma_20.toFixed(2)}` : 'N/A';
+    document.getElementById('sma50').textContent = data.sma_50 ? `$${data.sma_50.toFixed(2)}` : 'N/A';
+    
+    // RSI with context
+    const rsiElement = document.getElementById('rsi');
+    const rsiValue = data.rsi || 50;
+    rsiElement.textContent = rsiValue.toFixed(2);
+    if (data.rsi === 50.0 && !data.data_quality?.has_recent_volume) {
+        rsiElement.title = 'RSI calculated from limited data - may not be reliable';
+    }
+    
+    // Add security type indicator if it's a warrant
+    if (data.data_quality?.security_type === 'warrant') {
+        const warrantIndicator = document.createElement('span');
+        warrantIndicator.textContent = ' [WARRANT]';
+        warrantIndicator.style.fontSize = '0.8em';
+        warrantIndicator.style.color = '#d97706';
+        warrantIndicator.style.fontWeight = 'bold';
+        document.getElementById('stockSymbol').appendChild(warrantIndicator);
+    }
+}
+
+function displayTradingSignal(data) {
+    const actionElement = document.getElementById('signalAction');
+    actionElement.textContent = data.action;
+    actionElement.className = `signal signal-${data.action.toLowerCase()}`;
+    
+    document.getElementById('signalPrice').textContent = `$${data.price?.toFixed(2) || '0.00'}`;
+    document.getElementById('confidence').textContent = `${(data.confidence * 100).toFixed(0)}%`;
+    
+    if (data.timestamp) {
+        const date = new Date(data.timestamp);
+        document.getElementById('signalTime').textContent = date.toLocaleDateString();
+    }
+}
+
+function displayChart(chartData, symbol, dataQuality, period, interval) {
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    
+    if (priceChart) {
+        priceChart.destroy();
+    }
+    
+    const labels = chartData.map(d => d.date);
+    const prices = chartData.map(d => d.close);
+    const sma20 = chartData.map(d => d.sma_20);
+    const sma50 = chartData.map(d => d.sma_50);
+    
+    // Update chart title with data quality and period information
+    const chartTitle = document.querySelector('.card:has(#priceChart) .card-title');
+    if (chartTitle) {
+        const periodDisplay = getPeriodDisplayName(period);
+        const realtime = dataQuality?.is_real_time ? '⚡ Real-time' : '📊 Historical';
+        chartTitle.textContent = `${realtime} Price Chart with Moving Averages`;
+        chartTitle.title = `${periodDisplay} view • ${dataQuality?.data_points} data points • Refreshes every ${dataQuality?.refresh_rate}`;
+    }
+    
+    priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: `${symbol} Price`,
+                    data: prices,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                },
+                {
+                    label: 'SMA 20',
+                    data: sma20,
+                    borderColor: '#16a34a',
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.1,
+                    borderWidth: 1
+                },
+                {
+                    label: 'SMA 50',
+                    data: sma50,
+                    borderColor: '#dc2626',
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.1,
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'Price ($)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('errorAlert').style.display = 'block';
+}
+
+function hideError() {
+    document.getElementById('errorAlert').style.display = 'none';
+}
+
+function showLoading() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// Chart Tab Functions
+function setupChartTabs() {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => {
+        button.addEventListener('click', async (e) => {
+            if (!currentSymbol) return;
+            
+            // Update active tab
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            // Get period and interval from button data attributes
+            const period = e.target.dataset.period;
+            const interval = e.target.dataset.interval;
+            
+            await loadChartData(period, interval);
+        });
+    });
+}
+
+async function loadChartData(period, interval) {
+    if (!currentSymbol) return;
+    
+    try {
+        showChartLoading(true);
+        
+        // Create custom request for different intervals
+        const requestData = { symbol: currentSymbol, period: period };
+        
+        // Override the API to use specific intervals for different periods
+        const response = await axios.post('/api/stock-data-custom', {
+            symbol: currentSymbol,
+            period: period,
+            interval: interval
+        }).catch(async () => {
+            // Fallback to regular API if custom doesn't exist yet
+            return await axios.post('/api/stock-data', requestData);
+        });
+        
+        const data = response.data;
+        
+        // Update chart with new data
+        displayChart(data.chart_data, currentSymbol, data.data_quality, period, interval);
+        
+        showChartLoading(false);
+        
+    } catch (error) {
+        console.error('Error loading chart data:', error);
+        showChartLoading(false);
+        showError('Failed to load chart data for selected period');
+    }
+}
+
+function showChartLoading(show) {
+    const loadingEl = document.getElementById('chartLoading');
+    if (loadingEl) {
+        loadingEl.style.display = show ? 'block' : 'none';
+    }
+}
+
+function getPeriodDisplayName(period) {
+    const periodMap = {
+        '1d': 'Real-time (Today)',
+        '5d': '1 Week',
+        '1mo': '1 Month',
+        '6mo': '6 Months',
+        '1y': '1 Year',
+        '5y': '5 Years'
+    };
+    return periodMap[period] || period;
+}
+
+// Load AAPL data by default
+window.addEventListener('load', () => {
+    document.getElementById('stockForm').dispatchEvent(new Event('submit'));
+});
+</script>
+{% endblock %}
