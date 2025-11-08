@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}Add Broker{% endblock %}
+
+{% block nav_brokers %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+    .broker-form {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 30px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .broker-type-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .broker-type-card:hover {
+        border-color: #007bff;
+        background-color: #f8f9fa;
+    }
+    
+    .broker-type-card.selected {
+        border-color: #007bff;
+        background-color: #e3f2fd;
+    }
+    
+    .broker-config {
+        display: none;
+        margin-top: 20px;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+    }
+    
+    .broker-config.active {
+        display: block;
+    }
+    
+    .form-section {
+        margin-bottom: 30px;
+    }
+    
+    .section-title {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #495057;
+        margin-bottom: 15px;
+        padding-bottom: 5px;
+        border-bottom: 2px solid #007bff;
+    }
+    
+    .help-text {
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+    
+    .status-indicators {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+    }
+    
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+    
+    .status-full { background-color: #d4edda; color: #155724; }
+    .status-partial { background-color: #fff3cd; color: #856404; }
+    .status-placeholder { background-color: #f8d7da; color: #721c24; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>🔗 Add New Broker</h1>
+                <a href="/brokers" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Brokers
+                </a>
+            </div>
+
+            <div class="broker-form">
+                <form method="post" action="/brokers/add" id="addBrokerForm">
+                    <!-- Step 1: Broker Selection -->
+                    <div class="form-section">
+                        <div class="section-title">1. Choose Broker Type</div>
+                        
+                        <div class="broker-type-card" onclick="selectBrokerType('simulation')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>🎮 Simulation</h5>
+                                    <p class="mb-1">Perfect for testing and learning without risk</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-full">FULL SUPPORT</span>
+                                        <span class="status-badge" style="background-color: #e3f2fd; color: #1976d2;">RECOMMENDED</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="simulation" class="form-check-input">
+                            </div>
+                        </div>
+
+                        <div class="broker-type-card" onclick="selectBrokerType('alpaca')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>🦙 Alpaca Markets</h5>
+                                    <p class="mb-1">Commission-free stock trading with powerful API</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-full">FULL SUPPORT</span>
+                                        <span class="status-badge" style="background-color: #e8f5e8; color: #2e7d32;">PAPER & LIVE</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="alpaca" class="form-check-input">
+                            </div>
+                        </div>
+
+                        <div class="broker-type-card" onclick="selectBrokerType('ibkr')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>🏦 Interactive Brokers</h5>
+                                    <p class="mb-1">Professional trading platform with global markets</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-full">FULL SUPPORT</span>
+                                        <span class="status-badge" style="background-color: #fff3cd; color: #856404;">REQUIRES TWS</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="ibkr" class="form-check-input">
+                            </div>
+                        </div>
+
+                        <div class="broker-type-card" onclick="selectBrokerType('td_ameritrade')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>🇺🇸 TD Ameritrade</h5>
+                                    <p class="mb-1">Full-service broker with comprehensive tools</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-partial">OAUTH REQUIRED</span>
+                                        <span class="status-badge" style="background-color: #fff3cd; color: #856404;">SETUP NEEDED</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="td_ameritrade" class="form-check-input">
+                            </div>
+                        </div>
+
+                        <div class="broker-type-card" onclick="selectBrokerType('etrade')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>💼 E*TRADE</h5>
+                                    <p class="mb-1">Popular retail broker (Implementation in progress)</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-placeholder">PLACEHOLDER</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="etrade" class="form-check-input" disabled>
+                            </div>
+                        </div>
+
+                        <div class="broker-type-card" onclick="selectBrokerType('schwab')">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5>🏛️ Charles Schwab</h5>
+                                    <p class="mb-1">Major broker (Implementation in progress)</p>
+                                    <div class="status-indicators">
+                                        <span class="status-badge status-placeholder">PLACEHOLDER</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="broker_type" value="schwab" class="form-check-input" disabled>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Basic Configuration -->
+                    <div class="form-section">
+                        <div class="section-title">2. Basic Configuration</div>
+                        
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label for="broker_name">Broker Name *</label>
+                                <input type="text" class="form-control" id="broker_name" name="broker_name" required>
+                                <div class="help-text">Unique name to identify this broker (e.g., "alpaca_paper", "ibkr_live")</div>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="paper_trading" name="paper_trading" checked>
+                                    <label class="form-check-label" for="paper_trading">
+                                        Paper Trading (Recommended)
+                                    </label>
+                                </div>
+                                <div class="help-text">Start with paper trading to test without real money</div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label for="max_position_size">Max Position Size</label>
+                                <input type="number" class="form-control" id="max_position_size" name="max_position_size" 
+                                       value="0.05" step="0.01" min="0" max="1">
+                                <div class="help-text">Maximum % of portfolio per position (0.05 = 5%)</div>
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="stop_loss_pct">Stop Loss %</label>
+                                <input type="number" class="form-control" id="stop_loss_pct" name="stop_loss_pct" 
+                                       value="0.02" step="0.01" min="0" max="0.5">
+                                <div class="help-text">Automatic stop loss percentage (0.02 = 2%)</div>
+                            </div>
+                            <div class="form-group col-md-4">
+                                <!-- Reserved for future use -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Broker-Specific Configuration -->
+                    <div class="form-section">
+                        <div class="section-title">3. Connection Details</div>
+                        
+                        <!-- Simulation Config -->
+                        <div id="config-simulation" class="broker-config">
+                            <h5>Simulation Settings</h5>
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label for="sim_initial_balance">Initial Balance</label>
+                                    <input type="number" class="form-control" id="sim_initial_balance" 
+                                           name="sim_initial_balance" value="100000" step="1000" min="1000">
+                                    <div class="help-text">Starting cash balance for simulation</div>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label for="sim_commission">Commission per Trade</label>
+                                    <input type="number" class="form-control" id="sim_commission" 
+                                           name="sim_commission" value="0" step="0.01" min="0">
+                                    <div class="help-text">Commission charged per trade ($0 = commission-free)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Alpaca Config -->
+                        <div id="config-alpaca" class="broker-config">
+                            <h5>Alpaca Markets API</h5>
+                            <div class="alert alert-info">
+                                <strong>Setup Instructions:</strong>
+                                <ol>
+                                    <li>Sign up at <a href="https://alpaca.markets" target="_blank">alpaca.markets</a></li>
+                                    <li>Generate API keys from your dashboard</li>
+                                    <li>Use paper trading keys for testing</li>
+                                </ol>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label for="alpaca_api_key">API Key *</label>
+                                    <input type="text" class="form-control" id="alpaca_api_key" name="alpaca_api_key">
+                                    <div class="help-text">Your Alpaca API key (starts with PK...)</div>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label for="alpaca_secret_key">Secret Key *</label>
+                                    <input type="password" class="form-control" id="alpaca_secret_key" name="alpaca_secret_key">
+                                    <div class="help-text">Your Alpaca secret key (keep this secure!)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- IBKR Config -->
+                        <div id="config-ibkr" class="broker-config">
+                            <h5>Interactive Brokers TWS/Gateway</h5>
+                            <div class="alert alert-warning">
+                                <strong>Prerequisites:</strong>
+                                <ol>
+                                    <li>Install and run TWS (Trader Workstation) or IB Gateway</li>
+                                    <li>Enable API connections in TWS: Configure → API → Settings</li>
+                                    <li>Set socket port: 7497 (paper) or 7496 (live)</li>
+                                </ol>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label for="ibkr_host">Host</label>
+                                    <input type="text" class="form-control" id="ibkr_host" name="ibkr_host" value="127.0.0.1">
+                                    <div class="help-text">TWS/Gateway host (usually localhost)</div>
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label for="ibkr_port">Port</label>
+                                    <input type="number" class="form-control" id="ibkr_port" name="ibkr_port" value="7497">
+                                    <div class="help-text">7497 (paper) or 7496 (live)</div>
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label for="ibkr_client_id">Client ID</label>
+                                    <input type="number" class="form-control" id="ibkr_client_id" name="ibkr_client_id" value="1">
+                                    <div class="help-text">Unique client ID (1-32)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TD Ameritrade Config -->
+                        <div id="config-td_ameritrade" class="broker-config">
+                            <h5>TD Ameritrade API</h5>
+                            <div class="alert alert-warning">
+                                <strong>OAuth Setup Required:</strong>
+                                <ol>
+                                    <li>Register at <a href="https://developer.tdameritrade.com" target="_blank">developer.tdameritrade.com</a></li>
+                                    <li>Create an app and get Client ID</li>
+                                    <li>Complete OAuth flow to get refresh token</li>
+                                </ol>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label for="td_client_id">Client ID *</label>
+                                    <input type="text" class="form-control" id="td_client_id" name="td_client_id">
+                                    <div class="help-text">Your TD Ameritrade app's client ID</div>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label for="td_refresh_token">Refresh Token</label>
+                                    <input type="password" class="form-control" id="td_refresh_token" name="td_refresh_token">
+                                    <div class="help-text">OAuth refresh token (optional, can be set later)</div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="td_account_id">Account ID</label>
+                                <input type="text" class="form-control" id="td_account_id" name="td_account_id">
+                                <div class="help-text">Your TD Ameritrade account ID (optional)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="form-section">
+                        <div class="d-flex justify-content-between">
+                            <a href="/brokers" class="btn btn-outline-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-plus"></i> Add Broker
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function selectBrokerType(brokerType) {
+    // Remove selection from all cards
+    document.querySelectorAll('.broker-type-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    
+    // Hide all config sections
+    document.querySelectorAll('.broker-config').forEach(config => {
+        config.classList.remove('active');
+    });
+    
+    // Select current card
+    event.currentTarget.classList.add('selected');
+    
+    // Check the radio button
+    document.querySelector(`input[value="${brokerType}"]`).checked = true;
+    
+    // Show relevant config section
+    const configSection = document.getElementById(`config-${brokerType}`);
+    if (configSection) {
+        configSection.classList.add('active');
+    }
+    
+    // Update paper trading default based on broker type
+    const paperTradingCheckbox = document.getElementById('paper_trading');
+    if (brokerType === 'simulation') {
+        paperTradingCheckbox.checked = true;
+        paperTradingCheckbox.disabled = true;
+    } else {
+        paperTradingCheckbox.disabled = false;
+    }
+    
+    // Update port for IBKR based on paper trading
+    if (brokerType === 'ibkr') {
+        updateIBKRPort();
+    }
+}
+
+function updateIBKRPort() {
+    const paperTrading = document.getElementById('paper_trading').checked;
+    const portInput = document.getElementById('ibkr_port');
+    if (portInput) {
+        portInput.value = paperTrading ? 7497 : 7496;
+    }
+}
+
+// Update IBKR port when paper trading changes
+document.getElementById('paper_trading').addEventListener('change', function() {
+    const selectedBrokerType = document.querySelector('input[name="broker_type"]:checked');
+    if (selectedBrokerType && selectedBrokerType.value === 'ibkr') {
+        updateIBKRPort();
+    }
+});
+
+// Form validation
+document.getElementById('addBrokerForm').addEventListener('submit', function(e) {
+    const brokerType = document.querySelector('input[name="broker_type"]:checked');
+    
+    if (!brokerType) {
+        e.preventDefault();
+        alert('Please select a broker type');
+        return;
+    }
+    
+    // Validate broker-specific required fields
+    if (brokerType.value === 'alpaca') {
+        const apiKey = document.getElementById('alpaca_api_key').value;
+        const secretKey = document.getElementById('alpaca_secret_key').value;
+        
+        if (!apiKey || !secretKey) {
+            e.preventDefault();
+            alert('Alpaca API key and secret key are required');
+            return;
+        }
+    } else if (brokerType.value === 'td_ameritrade') {
+        const clientId = document.getElementById('td_client_id').value;
+        
+        if (!clientId) {
+            e.preventDefault();
+            alert('TD Ameritrade client ID is required');
+            return;
+        }
+    }
+});
+
+// Auto-generate broker name based on type and paper trading
+document.addEventListener('DOMContentLoaded', function() {
+    const brokerNameInput = document.getElementById('broker_name');
+    const paperTradingCheckbox = document.getElementById('paper_trading');
+    
+    function updateBrokerName() {
+        const selectedBrokerType = document.querySelector('input[name="broker_type"]:checked');
+        if (selectedBrokerType && !brokerNameInput.value) {
+            const suffix = paperTradingCheckbox.checked ? '_paper' : '_live';
+            brokerNameInput.value = selectedBrokerType.value + suffix;
+        }
+    }
+    
+    document.querySelectorAll('input[name="broker_type"]').forEach(radio => {
+        radio.addEventListener('change', updateBrokerName);
+    });
+    
+    paperTradingCheckbox.addEventListener('change', updateBrokerName);
+});
+</script>
+{% endblock %}

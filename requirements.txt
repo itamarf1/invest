@@ -25,3 +25,10 @@ fastapi-websocket
 scipy
 scikit-learn
 joblib
+# Additional broker integrations (optional)
+ib_insync  # Interactive Brokers
+keyring  # Secure credential storage
+cryptography  # Encryption for credentials
+python-multipart  # Form data support for FastAPI
+# schwab-py  # Charles Schwab (when available)
+# etrade-python-client  # E*TRADE (community package)

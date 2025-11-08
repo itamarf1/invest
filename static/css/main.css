@@ -222,6 +222,35 @@ body {
     color: var(--danger-color);
 }
 
+/* Data Quality Color Classes */
+.excellent-quality {
+    color: var(--success-color) !important;
+    font-weight: 700;
+}
+
+.good-quality {
+    color: #059669 !important;
+    font-weight: 600;
+}
+
+.fair-quality {
+    color: var(--warning-color) !important;
+    font-weight: 500;
+}
+
+.poor-quality {
+    color: var(--danger-color) !important;
+    font-weight: 700;
+}
+
+.positive {
+    color: var(--success-color);
+}
+
+.negative {
+    color: var(--danger-color);
+}
+
 /* Trading Signals */
 .signal {
     display: inline-flex;

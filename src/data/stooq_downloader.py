@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import os
 import shutil
+import time
 from dataclasses import dataclass
 import glob
 
@@ -26,18 +27,21 @@ class StooqDownloader:
     Downloads and processes bulk historical stock data from Stooq
     """
     
-    # Known Stooq dataset URLs (as of 2025)
+    # Stooq individual download URL template
+    STOOQ_CSV_URL = "https://stooq.pl/q/d/l/?s={symbol}&d1={start_date}&d2={end_date}&i=d"
+    
+    # Known Stooq dataset URLs (as of 2025) - Note: bulk downloads may require manual access
     DATASETS = {
         'us_stocks': StooqDataSet(
             name='US Stocks Daily',
-            url='https://static.stooq.com/db/d/usa_d.zip',
+            url='https://stooq.com/db/h/',  # Manual bulk download page
             description='Daily US stock data including NYSE, NASDAQ',
             expected_files=3600,
             file_pattern='**/*.us.txt'
         ),
         'us_etf': StooqDataSet(
             name='US ETF Daily', 
-            url='https://static.stooq.com/db/d/usa_etf_d.zip',
+            url='https://stooq.com/db/h/',  # Manual bulk download page
             description='Daily US ETF data',
             expected_files=2700,
             file_pattern='**/*.us.txt'
@@ -102,6 +106,148 @@ class StooqDownloader:
             
         except Exception as e:
             logger.error(f"Error initializing database: {str(e)}")
+    
+    def download_symbol_from_stooq(self, symbol: str, start_date: str = "20000101", 
+                                   end_date: str = None) -> pd.DataFrame:
+        """Download individual symbol data from Stooq"""
+        try:
+            if not end_date:
+                end_date = datetime.now().strftime("%Y%m%d")
+            
+            # Format symbol for Stooq (lowercase with .us suffix)
+            stooq_symbol = f"{symbol.lower()}.us"
+            
+            url = self.STOOQ_CSV_URL.format(
+                symbol=stooq_symbol,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            logger.debug(f"Downloading {symbol} from Stooq: {url}")
+            
+            # Download with headers to appear like a browser
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Check if we got actual CSV data or an error page
+            if len(response.text) < 50:
+                logger.warning(f"No data or invalid response for {symbol} from Stooq")
+                return pd.DataFrame()
+            
+            # Parse CSV data
+            from io import StringIO
+            csv_data = StringIO(response.text)
+            
+            df = pd.read_csv(csv_data)
+            
+            if df.empty:
+                logger.warning(f"Empty dataset for {symbol} from Stooq")
+                return pd.DataFrame()
+            
+            # Stooq uses Polish column names, map to English
+            column_mapping = {
+                'Data': 'date',
+                'Otwarcie': 'open', 
+                'Najwyzszy': 'high',
+                'Najnizszy': 'low',
+                'Zamkniecie': 'close',
+                'Wolumen': 'volume'
+            }
+            
+            # Rename columns
+            df = df.rename(columns=column_mapping)
+            
+            # Ensure we have the expected columns
+            required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_cols):
+                logger.error(f"Missing columns in {symbol} data. Got: {list(df.columns)}")
+                return pd.DataFrame()
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+            
+            logger.info(f"Downloaded {len(df)} records for {symbol} from Stooq")
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error downloading {symbol} from Stooq: {str(e)}")
+            return pd.DataFrame()
+    
+    def download_symbols_list(self, symbols: List[str], start_date: str = "20200101") -> Dict[str, pd.DataFrame]:
+        """Download multiple symbols from Stooq individually"""
+        results = {}
+        
+        logger.info(f"Downloading {len(symbols)} symbols from Stooq...")
+        
+        for i, symbol in enumerate(symbols):
+            try:
+                logger.info(f"Downloading {symbol} ({i+1}/{len(symbols)})")
+                
+                data = self.download_symbol_from_stooq(symbol, start_date)
+                
+                if not data.empty:
+                    results[symbol] = data
+                    
+                    # Save to processed directory
+                    processed_file = self.processed_dir / f"{symbol}.parquet"
+                    data.to_parquet(processed_file, index=False)
+                    
+                    # Update database
+                    self._update_symbol_metadata(symbol, data, 'stooq')
+                
+                # Rate limiting - be polite to Stooq
+                if i < len(symbols) - 1:
+                    time.sleep(1)  # 1 second between requests
+                    
+            except Exception as e:
+                logger.error(f"Error processing {symbol}: {str(e)}")
+                continue
+        
+        logger.info(f"Completed downloading {len(results)} symbols from Stooq")
+        return results
+    
+    def _update_symbol_metadata(self, symbol: str, df: pd.DataFrame, source: str):
+        """Update symbol metadata in database"""
+        try:
+            if df.empty:
+                return
+            
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Determine security type and exchange
+            exchange = 'US_MARKET'
+            security_type = 'stock'
+            
+            if symbol.endswith('W'):
+                security_type = 'warrant'
+            elif len(symbol) <= 4 and symbol.upper() in ['SPY', 'QQQ', 'IWM', 'VTI', 'GLD', 'TLT']:
+                security_type = 'etf'
+            
+            quality_score = self._calculate_quality_score(df)
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO stooq_symbols 
+                (symbol, filename, exchange, security_type, first_date, last_date, 
+                 total_records, file_size, last_updated, data_quality_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                symbol, f"{symbol.lower()}.us.txt", exchange, security_type,
+                df.iloc[0]['date'].strftime('%Y-%m-%d'),
+                df.iloc[-1]['date'].strftime('%Y-%m-%d'),
+                len(df), len(df) * 50,  # Rough file size estimate
+                datetime.now().isoformat(), quality_score
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error updating metadata for {symbol}: {str(e)}")
     
     def download_dataset(self, dataset_key: str, force_redownload: bool = False) -> bool:
         """Download and extract a Stooq dataset"""

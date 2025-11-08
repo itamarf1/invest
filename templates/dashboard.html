@@ -71,6 +71,17 @@
                     <div id="rsi" class="stat-value">0.00</div>
                     <div class="stat-label">RSI</div>
                 </div>
+                
+                <!-- Data Source Quality Indicator -->
+                <div class="stat">
+                    <div id="dataSource" class="stat-value">Unknown</div>
+                    <div class="stat-label">Data Source</div>
+                </div>
+                
+                <div class="stat">
+                    <div id="qualityScore" class="stat-value">0%</div>
+                    <div class="stat-label">Quality Score</div>
+                </div>
             </div>
         </div>
         
@@ -224,6 +235,52 @@ function displayStockData(data) {
         warrantIndicator.style.color = '#d97706';
         warrantIndicator.style.fontWeight = 'bold';
         document.getElementById('stockSymbol').appendChild(warrantIndicator);
+    }
+    
+    // Display data source information
+    const sourceElement = document.getElementById('dataSource');
+    const qualityElement = document.getElementById('qualityScore');
+    
+    if (data.data_source) {
+        // Format source name nicely
+        const sourceNames = {
+            'yahoo': 'Yahoo Finance',
+            'stooq': 'Stooq',
+            'alpha_vantage': 'Alpha Vantage'
+        };
+        const sourceName = sourceNames[data.data_source] || data.data_source;
+        sourceElement.textContent = sourceName;
+        
+        // Add source icon/emoji
+        const sourceIcons = {
+            'yahoo': '🟣',
+            'stooq': '🟠', 
+            'alpha_vantage': '🔵'
+        };
+        sourceElement.textContent = sourceIcons[data.data_source] + ' ' + sourceName;
+        
+        // Set tooltip with more details
+        sourceElement.title = `Primary data source: ${sourceName}${data.data_source_priority ? '\nPriority: ' + data.data_source_priority.join(' → ') : ''}`;
+    }
+    
+    if (data.quality_score !== undefined) {
+        const score = Math.round(data.quality_score);
+        qualityElement.textContent = `${score}%`;
+        
+        // Color code the quality score
+        if (score >= 90) {
+            qualityElement.className = 'stat-value excellent-quality';
+            qualityElement.title = 'Excellent data quality (90%+)';
+        } else if (score >= 75) {
+            qualityElement.className = 'stat-value good-quality';
+            qualityElement.title = 'Good data quality (75-89%)';
+        } else if (score >= 50) {
+            qualityElement.className = 'stat-value fair-quality';
+            qualityElement.title = 'Fair data quality (50-74%)';
+        } else {
+            qualityElement.className = 'stat-value poor-quality';
+            qualityElement.title = 'Poor data quality (<50%)';
+        }
     }
 }
 

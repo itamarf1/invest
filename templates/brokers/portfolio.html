@@ -1,0 +1,439 @@
+{% extends "base.html" %}
+
+{% block title %}Multi-Broker Portfolio{% endblock %}
+
+{% block nav_brokers %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+    .portfolio-overview {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+    }
+    
+    .portfolio-stat {
+        text-align: center;
+        padding: 20px;
+    }
+    
+    .portfolio-stat h3 {
+        font-size: 2.5em;
+        margin-bottom: 5px;
+        font-weight: bold;
+    }
+    
+    .portfolio-stat p {
+        font-size: 1.1em;
+        opacity: 0.9;
+        margin: 0;
+    }
+    
+    .broker-section {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        margin-bottom: 25px;
+        overflow: hidden;
+    }
+    
+    .broker-header {
+        background-color: #f8f9fa;
+        padding: 15px 20px;
+        border-bottom: 1px solid #e9ecef;
+        display: flex;
+        justify-content-between;
+        align-items: center;
+    }
+    
+    .broker-status {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .status-connected { background-color: #d4edda; color: #155724; }
+    .status-disconnected { background-color: #f8d7da; color: #721c24; }
+    .status-paper { background-color: #fff3cd; color: #856404; }
+    
+    .positions-table {
+        margin-bottom: 0;
+    }
+    
+    .positions-table th {
+        background-color: #f8f9fa;
+        border-top: none;
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    .positive { color: #28a745; }
+    .negative { color: #dc3545; }
+    .neutral { color: #6c757d; }
+    
+    .consolidated-section {
+        background: white;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        margin-bottom: 30px;
+    }
+    
+    .consolidated-header {
+        background-color: #007bff;
+        color: white;
+        padding: 15px 20px;
+        display: flex;
+        justify-content-between;
+        align-items: center;
+    }
+    
+    .no-positions {
+        text-align: center;
+        padding: 40px;
+        color: #6c757d;
+    }
+    
+    .allocation-chart {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Portfolio Overview -->
+    <div class="portfolio-overview">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="portfolio-stat">
+                    <h3>${{ "{:,.0f}".format(total_value) }}</h3>
+                    <p>Total Portfolio Value</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="portfolio-stat">
+                    <h3>{{ broker_status|length }}</h3>
+                    <p>Connected Brokers</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="portfolio-stat">
+                    <h3>{{ consolidated_positions|length }}</h3>
+                    <p>Unique Positions</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="portfolio-stat">
+                    <h3>${{ "{:,.0f}".format(broker_status.values()|map(attribute='cash')|sum) }}</h3>
+                    <p>Total Cash</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="mb-0">📊 Multi-Broker Portfolio</h1>
+                    <div>
+                        <button onclick="refreshData()" class="btn btn-light">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <a href="/brokers" class="btn btn-light">
+                            <i class="fas fa-cog"></i> Manage Brokers
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Consolidated Positions -->
+            {% if consolidated_positions %}
+            <div class="consolidated-section">
+                <div class="consolidated-header">
+                    <h4 class="mb-0">🎯 Consolidated Positions</h4>
+                    <span>{{ consolidated_positions|length }} Positions</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table positions-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Quantity</th>
+                                <th>Avg Price</th>
+                                <th>Current Price</th>
+                                <th>Market Value</th>
+                                <th>P&L</th>
+                                <th>P&L %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for symbol, position in consolidated_positions.items() %}
+                            <tr>
+                                <td><strong>{{ symbol }}</strong></td>
+                                <td>{{ "{:,.0f}".format(position.quantity) }}</td>
+                                <td>${{ "{:,.2f}".format(position.avg_entry_price) }}</td>
+                                <td>${{ "{:,.2f}".format(position.current_price) }}</td>
+                                <td>${{ "{:,.2f}".format(position.market_value) }}</td>
+                                <td class="{% if position.unrealized_pnl > 0 %}positive{% elif position.unrealized_pnl < 0 %}negative{% else %}neutral{% endif %}">
+                                    ${{ "{:,.2f}".format(position.unrealized_pnl) }}
+                                </td>
+                                <td class="{% if position.unrealized_pnl_pct > 0 %}positive{% elif position.unrealized_pnl_pct < 0 %}negative{% else %}neutral{% endif %}">
+                                    {{ "{:+.2f}".format(position.unrealized_pnl_pct) }}%
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Individual Broker Positions -->
+            {% for broker_name, positions in all_positions.items() %}
+            <div class="broker-section">
+                <div class="broker-header">
+                    <div>
+                        <h5 class="mb-0">{{ broker_name }}</h5>
+                        <small>{{ broker_status[broker_name].broker_type.upper() }}</small>
+                    </div>
+                    <div>
+                        {% if broker_status[broker_name].is_connected %}
+                            <span class="broker-status status-connected">Connected</span>
+                        {% else %}
+                            <span class="broker-status status-disconnected">Disconnected</span>
+                        {% endif %}
+                        {% if broker_status[broker_name].paper_trading %}
+                            <span class="broker-status status-paper">Paper</span>
+                        {% endif %}
+                        {% if broker_status[broker_name].is_default %}
+                            <span class="broker-status" style="background-color: #e3f2fd; color: #1976d2;">Default</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                {% if positions %}
+                <div class="table-responsive">
+                    <table class="table positions-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Quantity</th>
+                                <th>Avg Price</th>
+                                <th>Current Price</th>
+                                <th>Market Value</th>
+                                <th>P&L</th>
+                                <th>P&L %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for position in positions %}
+                            <tr>
+                                <td><strong>{{ position.symbol }}</strong></td>
+                                <td>{{ "{:,.0f}".format(position.quantity) }}</td>
+                                <td>${{ "{:,.2f}".format(position.avg_entry_price) }}</td>
+                                <td>${{ "{:,.2f}".format(position.current_price) }}</td>
+                                <td>${{ "{:,.2f}".format(position.market_value) }}</td>
+                                <td class="{% if position.unrealized_pnl > 0 %}positive{% elif position.unrealized_pnl < 0 %}negative{% else %}neutral{% endif %}">
+                                    ${{ "{:,.2f}".format(position.unrealized_pnl) }}
+                                </td>
+                                <td class="{% if position.unrealized_pnl_pct > 0 %}positive{% elif position.unrealized_pnl_pct < 0 %}negative{% else %}neutral{% endif %}">
+                                    {{ "{:+.2f}".format(position.unrealized_pnl_pct) }}%
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="no-positions">
+                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                    <p>No positions in this broker</p>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            {% if not all_positions %}
+            <div class="broker-section">
+                <div class="no-positions">
+                    <i class="fas fa-chart-pie fa-4x text-muted mb-4"></i>
+                    <h4>No Positions Found</h4>
+                    <p>You don't have any open positions across your brokers.</p>
+                    <p>Start trading to see your portfolio here!</p>
+                    <a href="/brokers" class="btn btn-primary mt-3">
+                        <i class="fas fa-plus"></i> Add Broker
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Account Summary -->
+            <div class="allocation-chart">
+                <h5 class="mb-3">💼 Account Summary</h5>
+                
+                {% for broker_name, status in broker_status.items() %}
+                <div class="d-flex justify-content-between align-items-center mb-3 p-3 border rounded">
+                    <div>
+                        <strong>{{ broker_name }}</strong>
+                        <br>
+                        <small class="text-muted">{{ status.broker_type.upper() }}</small>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-weight-bold">${{ "{:,.0f}".format(status.portfolio_value) }}</div>
+                        <small class="text-muted">Cash: ${{ "{:,.0f}".format(status.cash) }}</small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Quick Order Form -->
+            <div class="allocation-chart">
+                <h5 class="mb-3">⚡ Quick Order</h5>
+                
+                <form id="quickOrderForm">
+                    <div class="form-group">
+                        <input type="text" class="form-control" id="orderSymbol" placeholder="Symbol (e.g., AAPL)" required>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <input type="number" class="form-control" id="orderQuantity" placeholder="Quantity" required>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <select class="form-control" id="orderSide" required>
+                                <option value="buy">BUY</option>
+                                <option value="sell">SELL</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <select class="form-control" id="orderBroker">
+                            <option value="">Distribute Across All Brokers</option>
+                            {% for broker_name, status in broker_status.items() %}
+                            {% if status.is_connected %}
+                            <option value="{{ broker_name }}">{{ broker_name }} ({{ status.broker_type.upper() }})</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-paper-plane"></i> Submit Order
+                    </button>
+                </form>
+            </div>
+
+            <!-- Performance Metrics -->
+            {% if consolidated_positions %}
+            <div class="allocation-chart">
+                <h5 class="mb-3">📈 Performance</h5>
+                
+                {% set total_pnl = consolidated_positions.values()|map(attribute='unrealized_pnl')|sum %}
+                {% set total_cost = consolidated_positions.values()|map(attribute='cost_basis')|sum %}
+                {% set total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0 %}
+                
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-right">
+                            <h4 class="{% if total_pnl > 0 %}positive{% elif total_pnl < 0 %}negative{% else %}neutral{% endif %}">
+                                ${{ "{:,.2f}".format(total_pnl) }}
+                            </h4>
+                            <small>Total P&L</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="{% if total_pnl_pct > 0 %}positive{% elif total_pnl_pct < 0 %}negative{% else %}neutral{% endif %}">
+                            {{ "{:+.2f}".format(total_pnl_pct) }}%
+                        </h4>
+                        <small>Return %</small>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="small">
+                    <div class="d-flex justify-content-between">
+                        <span>Market Value:</span>
+                        <span>${{ "{:,.2f}".format(consolidated_positions.values()|map(attribute='market_value')|sum) }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Cost Basis:</span>
+                        <span>${{ "{:,.2f}".format(total_cost) }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('quickOrderForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('orderSymbol').value.toUpperCase();
+    const quantity = parseFloat(document.getElementById('orderQuantity').value);
+    const side = document.getElementById('orderSide').value;
+    const broker = document.getElementById('orderBroker').value;
+    
+    try {
+        const orderData = {
+            symbol: symbol,
+            quantity: quantity,
+            side: side,
+            order_type: 'market'
+        };
+        
+        if (broker) {
+            orderData.broker_name = broker;
+        }
+        
+        const response = await fetch('/brokers/order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(orderData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            if (broker) {
+                alert(`Order submitted to ${broker}!\nOrder ID: ${result.order_id}`);
+            } else {
+                const orderCount = Object.keys(result.results).length;
+                alert(`Order distributed across ${orderCount} brokers!`);
+            }
+            document.getElementById('quickOrderForm').reset();
+        } else {
+            alert('Order failed! Please check your broker connections.');
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+});
+
+async function refreshData() {
+    location.reload();
+}
+
+// Auto-refresh every 60 seconds
+setInterval(refreshData, 60000);
+</script>
+{% endblock %}

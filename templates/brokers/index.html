@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}Broker Management{% endblock %}
+
+{% block nav_brokers %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+    .broker-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .broker-status {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .status-connected {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .status-disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    
+    .status-paper {
+        background-color: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+    }
+    
+    .default-broker {
+        border-left: 4px solid #007bff;
+    }
+    
+    .broker-actions {
+        margin-top: 15px;
+    }
+    
+    .broker-actions button {
+        margin-right: 10px;
+        margin-bottom: 5px;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .stat-card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .stat-value {
+        font-size: 2em;
+        font-weight: bold;
+        color: #007bff;
+        margin-bottom: 5px;
+    }
+    
+    .stat-label {
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .alert-info {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>🔗 Broker Management</h1>
+                <div>
+                    <a href="/brokers/add" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add Broker
+                    </a>
+                    <button onclick="refreshStatus()" class="btn btn-secondary">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <a href="/brokers/portfolio" class="btn btn-info">
+                        <i class="fas fa-chart-pie"></i> Portfolio View
+                    </a>
+                </div>
+            </div>
+
+            <!-- Statistics Overview -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ broker_status|length }}</div>
+                    <div class="stat-label">Total Brokers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">
+                        {{ broker_status.values()|selectattr('is_connected')|list|length }}
+                    </div>
+                    <div class="stat-label">Connected</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">
+                        ${{ "{:,.0f}".format(broker_status.values()|map(attribute='portfolio_value')|sum) }}
+                    </div>
+                    <div class="stat-label">Total Portfolio Value</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">
+                        ${{ "{:,.0f}".format(broker_status.values()|map(attribute='cash')|sum) }}
+                    </div>
+                    <div class="stat-label">Total Cash</div>
+                </div>
+            </div>
+
+            {% if not configured_brokers %}
+            <div class="alert-info">
+                <h4>👋 Welcome to Multi-Broker Trading!</h4>
+                <p>You haven't configured any brokers yet. Get started by:</p>
+                <ol>
+                    <li><strong>Adding your first broker</strong> - Click "Add Broker" above</li>
+                    <li><strong>Choose a broker type</strong> - Start with Simulation for testing</li>
+                    <li><strong>Configure credentials</strong> - Enter your API keys or connection details</li>
+                    <li><strong>Test the connection</strong> - Verify everything works</li>
+                </ol>
+                <p><strong>Recommended:</strong> Start with the Simulation broker to test the system risk-free!</p>
+            </div>
+            {% endif %}
+
+            <!-- Broker Cards -->
+            <div class="row">
+                {% for name, status in broker_status.items() %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="broker-card {% if status.is_default %}default-broker{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h5 class="mb-0">
+                                {{ name }}
+                                {% if status.is_default %}
+                                    <i class="fas fa-star text-warning" title="Default Broker"></i>
+                                {% endif %}
+                            </h5>
+                            <div>
+                                {% if status.is_connected %}
+                                    <span class="broker-status status-connected">Connected</span>
+                                {% else %}
+                                    <span class="broker-status status-disconnected">Disconnected</span>
+                                {% endif %}
+                                {% if status.paper_trading %}
+                                    <span class="broker-status status-paper">Paper</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <strong>Type:</strong> {{ status.broker_type.upper() }}
+                        </div>
+                        
+                        {% if status.is_connected %}
+                        <div class="mb-2">
+                            <strong>Portfolio:</strong> ${{ "{:,.2f}".format(status.portfolio_value) }}
+                        </div>
+                        <div class="mb-2">
+                            <strong>Cash:</strong> ${{ "{:,.2f}".format(status.cash) }}
+                        </div>
+                        <div class="mb-2">
+                            <strong>Weight:</strong> {{ status.weight }}
+                        </div>
+                        {% endif %}
+
+                        <div class="broker-actions">
+                            <button onclick="testBroker('{{ name }}')" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-plug"></i> Test
+                            </button>
+                            {% if not status.is_default %}
+                            <button onclick="setDefaultBroker('{{ name }}')" class="btn btn-sm btn-outline-info">
+                                <i class="fas fa-star"></i> Set Default
+                            </button>
+                            {% endif %}
+                            <button onclick="deleteBroker('{{ name }}')" class="btn btn-sm btn-outline-danger">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if configured_brokers %}
+            <!-- Quick Actions -->
+            <div class="mt-4">
+                <h3>Quick Actions</h3>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Submit Order</h5>
+                                <form id="quickOrderForm">
+                                    <div class="form-row">
+                                        <div class="form-group col-md-4">
+                                            <input type="text" class="form-control" id="orderSymbol" placeholder="Symbol" required>
+                                        </div>
+                                        <div class="form-group col-md-3">
+                                            <input type="number" class="form-control" id="orderQuantity" placeholder="Qty" required>
+                                        </div>
+                                        <div class="form-group col-md-3">
+                                            <select class="form-control" id="orderSide" required>
+                                                <option value="buy">BUY</option>
+                                                <option value="sell">SELL</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group col-md-2">
+                                            <button type="submit" class="btn btn-primary btn-block">Submit</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Available Broker Types</h5>
+                                <div class="list-group list-group-flush">
+                                    {% for broker_type, class_name in broker_types.items() %}
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>{{ broker_type.upper() }}</span>
+                                        {% if broker_type in configured_brokers.values() %}
+                                            <span class="badge badge-success">Configured</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Available</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Test Results Modal -->
+<div class="modal fade" id="testResultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Connection Test Result</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body" id="testResultBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function testBroker(brokerName) {
+    try {
+        const response = await fetch(`/brokers/${brokerName}/test`);
+        const result = await response.json();
+        
+        let html = '';
+        if (result.success) {
+            html = `
+                <div class="alert alert-success">
+                    <h6>✅ Connection Successful!</h6>
+                    ${result.account_info ? `
+                        <p><strong>Account ID:</strong> ${result.account_info.account_id}</p>
+                        <p><strong>Portfolio Value:</strong> $${result.account_info.portfolio_value.toLocaleString()}</p>
+                        <p><strong>Cash:</strong> $${result.account_info.cash.toLocaleString()}</p>
+                        <p><strong>Buying Power:</strong> $${result.account_info.buying_power.toLocaleString()}</p>
+                        <p><strong>Positions:</strong> ${result.positions_count}</p>
+                    ` : ''}
+                </div>
+            `;
+        } else {
+            html = `
+                <div class="alert alert-danger">
+                    <h6>❌ Connection Failed</h6>
+                    <p>${result.message}</p>
+                </div>
+            `;
+        }
+        
+        document.getElementById('testResultBody').innerHTML = html;
+        $('#testResultModal').modal('show');
+    } catch (error) {
+        document.getElementById('testResultBody').innerHTML = `
+            <div class="alert alert-danger">
+                <h6>Error</h6>
+                <p>${error.message}</p>
+            </div>
+        `;
+        $('#testResultModal').modal('show');
+    }
+}
+
+async function deleteBroker(brokerName) {
+    if (confirm(`Are you sure you want to delete broker "${brokerName}"?`)) {
+        try {
+            const response = await fetch(`/brokers/${brokerName}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                location.reload();
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.detail}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+}
+
+async function refreshStatus() {
+    location.reload();
+}
+
+document.getElementById('quickOrderForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('orderSymbol').value;
+    const quantity = parseFloat(document.getElementById('orderQuantity').value);
+    const side = document.getElementById('orderSide').value;
+    
+    try {
+        const response = await fetch('/brokers/order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                symbol: symbol,
+                quantity: quantity,
+                side: side,
+                order_type: 'market'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Order submitted successfully!');
+            document.getElementById('quickOrderForm').reset();
+        } else {
+            alert('Order failed!');
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+});
+
+// Auto-refresh status every 30 seconds
+setInterval(async function() {
+    try {
+        const response = await fetch('/api/brokers/status');
+        const data = await response.json();
+        
+        // Update portfolio value display
+        const portfolioValue = document.querySelector('.stat-value');
+        if (portfolioValue) {
+            portfolioValue.textContent = `$${data.total_portfolio_value.toLocaleString()}`;
+        }
+    } catch (error) {
+        console.error('Error updating status:', error);
+    }
+}, 30000);
+</script>
+{% endblock %}
