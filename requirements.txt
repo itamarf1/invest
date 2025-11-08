@@ -1,4 +1,4 @@
-yfinance==0.2.18
+yfinance==0.2.66
 pandas==2.3.0
 numpy==2.3.2
 fastapi==0.95.1
@@ -21,7 +21,8 @@ tweepy
 praw
 asyncpraw
 websockets==15.0.1
-fastapi-websocket
+peewee==3.18.3  # Database ORM for yfinance
+curl_cffi==0.13.0  # HTTP client for yfinance
 scipy==1.16.1
 joblib==1.5.2
 # Additional broker integrations
@@ -29,5 +30,7 @@ ib_insync  # Interactive Brokers
 keyring  # Secure credential storage
 cryptography==39.0.2  # Encryption for credentials
 python-multipart==0.0.20  # Form data support for FastAPI
+pyotp  # Time-based OTP for authentication
+qrcode[pil]  # QR code generation
 # schwab-py  # Charles Schwab (when available)
 # etrade-python-client  # E*TRADE (community package)
